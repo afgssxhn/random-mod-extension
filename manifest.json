@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "Modrinth Random Mod",
+  "version": "0.1.0",
+  "description": "Roll a random Minecraft mod from Modrinth with filters.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "Modrinth Random Mod",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "permissions": ["storage"],
+  "host_permissions": [
+    "https://modrinth.com/*",
+    "https://api.modrinth.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["https://modrinth.com/*"],
+      "run_at": "document_idle",
+      "js": [
+        "src/utils.js",
+        "src/storage.js",
+        "src/api.js",
+        "src/widget.css.js",
+        "src/widget.js",
+        "content.js"
+      ]
+    }
+  ]
+}
