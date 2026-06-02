@@ -1,34 +1,35 @@
 (() => {
   'use strict';
 
-  const BTN_ID = 'mrmr-header-btn';
+  const BTN_HOST_ID = 'mrmr-btn-host';
   const HOST_ID = 'mrmr-modal-host';
   const MIN_DESKTOP_WIDTH = 1024;
-  const MUTATION_DEBOUNCE_MS = 250;
 
   function createButton() {
     const a = document.createElement('a');
-    a.id = BTN_ID;
-    a.className = 'btn-wrapper text-base';
+    a.id = 'mrmr-roll-btn';
     a.href = 'javascript:void(0)';
     a.setAttribute('role', 'button');
     a.setAttribute('aria-label', 'Random Mod (Shift+R)');
     a.title = 'Random Mod (Shift+R)';
+    // Standalone floating button (not blended into Modrinth's header).
     a.style.cssText = [
       'display:inline-flex',
       'align-items:center',
       'justify-content:center',
-      'width:36px',
-      'height:36px',
-      'border-radius:8px',
-      'background:transparent',
+      'width:44px',
+      'height:44px',
+      'border-radius:12px',
+      'background:#08110c',
+      'border:1px solid rgba(27, 217, 106, 0.35)',
       'color:#1bd96a',
       'cursor:pointer',
       'text-decoration:none',
-      'transition:background .12s'
+      'box-shadow:0 4px 14px rgba(0, 0, 0, 0.35)',
+      'transition:background .12s, transform .12s'
     ].join(';');
     a.innerHTML = [
-      '<svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">',
+      '<svg width="22" height="22" viewBox="0 0 20 20" fill="none" aria-hidden="true">',
       '<rect x="2" y="2" width="16" height="16" rx="4" stroke="currentColor" stroke-width="1.5"/>',
       '<circle cx="7" cy="7" r="1.3" fill="currentColor"/>',
       '<circle cx="13" cy="7" r="1.3" fill="currentColor"/>',
@@ -38,10 +39,10 @@
       '</svg>'
     ].join('');
     a.addEventListener('mouseenter', () => {
-      a.style.background = 'rgba(27, 217, 106, 0.12)';
+      a.style.background = 'rgba(27, 217, 106, 0.16)';
     });
     a.addEventListener('mouseleave', () => {
-      a.style.background = 'transparent';
+      a.style.background = '#08110c';
     });
     a.addEventListener('click', (e) => {
       e.preventDefault();
@@ -50,15 +51,30 @@
     return a;
   }
 
-  function findHeaderSlot() {
-    return document.querySelector('header.desktop-only > div:last-child.flex');
-  }
-
-  function reinject() {
-    if (document.getElementById(BTN_ID)) return;
-    const slot = findHeaderSlot();
-    if (!slot) return;
-    slot.insertBefore(createButton(), slot.firstChild);
+  // Body-level, fixed-position host. It lives OUTSIDE Nuxt's app root
+  // (#__nuxt), so Vue never patches it — no hydration corruption and no
+  // `$_detachPopperNode` / `parentNode` crash. We never write into Modrinth's
+  // Vue-managed DOM.
+  function ensureButton() {
+    // Desktop-only: on mobile the widget is reached via the extension popup.
+    if (window.innerWidth < MIN_DESKTOP_WIDTH) {
+      const existing = document.getElementById(BTN_HOST_ID);
+      if (existing) existing.remove();
+      return;
+    }
+    if (document.getElementById(BTN_HOST_ID)) return;
+    const host = document.createElement('div');
+    host.id = BTN_HOST_ID;
+    host.style.cssText = [
+      'position:fixed',
+      'top:72px',   // just below Modrinth's header band, off its controls
+      'right:16px',
+      'z-index:2147483000',   // below the modal backdrop (2147483646)
+      'margin:0',
+      'padding:0'
+    ].join(';');
+    host.appendChild(createButton());
+    document.body.appendChild(host);
   }
 
   // Lazy modal instance
@@ -79,42 +95,23 @@
     ensureWidget().open();
   }
 
-  // ── SPA nav hooks (fast rAF) ────────────────────────────────
-  let rafScheduled = false;
-  const scheduleRaf = () => {
-    if (rafScheduled) return;
-    rafScheduled = true;
-    requestAnimationFrame(() => {
-      rafScheduled = false;
-      reinject();
-    });
-  };
+  // ── Keep our own host alive ─────────────────────────────────
+  // Observe ONLY document.body's direct children (no subtree). This never
+  // inspects or mutates Vue-managed DOM; it just re-creates our own body-level
+  // node if something removes it. Safe across SPA navigation and re-renders.
+  const mo = new MutationObserver(() => {
+    if (window.innerWidth >= MIN_DESKTOP_WIDTH && !document.getElementById(BTN_HOST_ID)) {
+      ensureButton();
+    }
+  });
+  mo.observe(document.body, { childList: true });
 
-  const origPush = history.pushState;
-  history.pushState = function () {
-    const r = origPush.apply(this, arguments);
-    scheduleRaf();
-    return r;
-  };
-  const origReplace = history.replaceState;
-  history.replaceState = function () {
-    const r = origReplace.apply(this, arguments);
-    scheduleRaf();
-    return r;
-  };
-  window.addEventListener('popstate', scheduleRaf);
-
-  // ── MutationObserver (trailing debounce 250ms) ──────────────
-  let debounceTimer = null;
-  const scheduleDebounced = () => {
-    if (debounceTimer !== null) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => {
-      debounceTimer = null;
-      reinject();
-    }, MUTATION_DEBOUNCE_MS);
-  };
-  const mo = new MutationObserver(scheduleDebounced);
-  mo.observe(document.body, { childList: true, subtree: true });
+  // ── Show/hide when crossing the desktop width threshold ─────
+  let resizeTimer = null;
+  window.addEventListener('resize', () => {
+    if (resizeTimer !== null) clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(ensureButton, 150);
+  });
 
   // ── Hotkey: Shift+R (layout-independent via e.code) ─────────
   window.addEventListener('keydown', (e) => {
@@ -128,5 +125,5 @@
   });
 
   // First paint
-  reinject();
+  ensureButton();
 })();
