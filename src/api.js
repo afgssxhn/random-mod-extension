@@ -3,6 +3,12 @@ MRMR.api = (() => {
   const BASE = 'https://api.modrinth.com/v2';
   const OFFSET_CAP = 10000;
   const MIN_DL_MAX_TRIES = 5;
+  const VERSION_FILTER_MAX_TRIES = 12;
+  // Modrinth's search returns total_hits:0 once the facets filter carries too
+  // many terms (empirically: 49 terms still works, 55 → 0 hits). Stay under it.
+  // Counts ALL terms (project_type + loaders + versions + categories + side),
+  // so a wide version range OR many categories both take the safe path.
+  const MAX_FACET_TERMS = 45;
 
   async function fetchJSON(url, attempt = 0) {
     const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
@@ -44,7 +50,7 @@ MRMR.api = (() => {
     return releases.slice(lo, hi + 1).map(v => v.version);
   }
 
-  function buildFacets(filters, versionsRange) {
+  function buildFacetGroups(filters, versionsRange) {
     const groups = [['project_type:mod']];
 
     if (filters.loaders && filters.loaders.length) {
@@ -69,18 +75,50 @@ MRMR.api = (() => {
       groups.push(['server_side:required', 'server_side:optional']);
     }
 
-    return JSON.stringify(groups);
+    return groups;
+  }
+
+  function buildFacets(filters, versionsRange) {
+    return JSON.stringify(buildFacetGroups(filters, versionsRange));
+  }
+
+  function countFacetTerms(groups) {
+    return groups.reduce((n, g) => n + g.length, 0);
+  }
+
+  function hitMatchesVersions(hit, wanted) {
+    return Array.isArray(hit.versions) && hit.versions.some(v => wanted.has(v));
   }
 
   async function searchRandomMod(filters) {
     let versionsRange = [];
+    let releases = [];
     if (filters.versionFrom || filters.versionTo) {
       const gv = await getGameVersions();
-      const releases = gv.filter(v => v.version_type === 'release');
+      releases = gv.filter(v => v.version_type === 'release');
       versionsRange = computeVersionsRange(releases, filters.versionFrom, filters.versionTo);
     }
 
-    const facets = buildFacets(filters, versionsRange);
+    // A large `versions` OR group makes Modrinth's search return total_hits:0.
+    // Two cases keep it out of the query:
+    //   - the range spans every release → it means "any version", just drop it;
+    //   - it (with the other facets) would exceed MAX_FACET_TERMS → drop it from
+    //     the query and instead filter candidates by version on the client.
+    const coversAllReleases = releases.length > 0 && versionsRange.length === releases.length;
+    const fitsInFacet =
+      versionsRange.length > 0 &&
+      !coversAllReleases &&
+      countFacetTerms(buildFacetGroups(filters, versionsRange)) <= MAX_FACET_TERMS;
+
+    const facetVersions = fitsInFacet ? versionsRange : [];
+    // Client-side version filter: only when we had a real range but didn't (or
+    // couldn't) put it in the query — never for the "any version" full range.
+    const wantedVersions =
+      versionsRange.length > 0 && !fitsInFacet && !coversAllReleases
+        ? new Set(versionsRange)
+        : null;
+
+    const facets = buildFacets(filters, facetVersions);
     const qs = 'facets=' + encodeURIComponent(facets) + '&limit=1';
 
     const first = await fetchJSON(BASE + '/search?' + qs + '&offset=0');
@@ -88,18 +126,20 @@ MRMR.api = (() => {
 
     const capped = Math.min(first.total_hits, OFFSET_CAP);
     const minDL = Number(filters.minDownloads) || 0;
-    const maxTries = minDL > 0 ? MIN_DL_MAX_TRIES : 1;
+    const maxTries = wantedVersions
+      ? VERSION_FILTER_MAX_TRIES
+      : (minDL > 0 ? MIN_DL_MAX_TRIES : 1);
 
     for (let i = 0; i < maxTries; i++) {
       const offset = MRMR.utils.randInt(capped);
       const res = await fetchJSON(BASE + '/search?' + qs + '&offset=' + offset);
       const hit = res.hits && res.hits[0];
       if (!hit) continue;
-      if (hit.downloads >= minDL) {
-        return { mod: hit, biased: first.total_hits > OFFSET_CAP };
-      }
+      if (minDL > 0 && hit.downloads < minDL) continue;
+      if (wantedVersions && !hitMatchesVersions(hit, wantedVersions)) continue;
+      return { mod: hit, biased: first.total_hits > OFFSET_CAP };
     }
-    return { empty: true, reason: 'min_downloads' };
+    return { empty: true, reason: wantedVersions ? 'version_filter' : 'min_downloads' };
   }
 
   return {
