@@ -156,6 +156,10 @@
         reply(MRMR.api.getCategories('curseforge'));
         return true;
       }
+      if (msg.type === 'MRMR_CF_VERSIONS') {
+        reply(MRMR.api.getGameVersions('curseforge'));
+        return true;
+      }
     });
   }
 

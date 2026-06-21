@@ -108,6 +108,10 @@ MRMR.widget = (() => {
     // Categories are a different taxonomy per site, stored separately.
     const catKey = isCF ? 'cfCategories' : 'categories';
     const selectedCats = () => filters[catKey] || [];
+    // CurseForge lists only 4 mod loaders; Modrinth has the full set.
+    const loaderList = isCF
+      ? (MRMR.api.CF_LOADERS || ['Forge', 'Fabric', 'NeoForge', 'Quilt'])
+      : LOADERS;
 
     // Event: Escape to close (modal only)
     const onKeydown = (e) => {
@@ -194,7 +198,7 @@ MRMR.widget = (() => {
       };
 
       // Loader pills
-      const loaderPills = LOADERS.map(l =>
+      const loaderPills = loaderList.map(l =>
         renderPill(l, filters.loaders.includes(l), () => toggle('loaders', l))
       );
 
@@ -476,7 +480,7 @@ MRMR.widget = (() => {
       } catch { /* empty — use defaults */ }
       render(); // first paint with what we have
       try {
-        const gv = await MRMR.api.getGameVersions();
+        const gv = await MRMR.api.getGameVersions(site);
         releases = gv.filter(v => v.version_type === 'release');
       } catch { /* leave empty — user can still pick loaders */ }
       try {

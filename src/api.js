@@ -10,23 +10,24 @@ MRMR.api = (() => {
   // so a wide version range OR many categories both take the safe path.
   const MAX_FACET_TERMS = 45;
 
-  // ── CurseForge (internal site API, same-origin from the content script) ──
-  const CF_SEARCH = 'https://www.curseforge.com/api/v1/mods/search';
-  const CF_CATEGORIES = 'https://www.curseforge.com/api/v1/categories';
-  const CF_GAME_ID = 432;     // Minecraft
-  const CF_CLASS_ID = 6;      // Mods
-  const CF_SORT_DOWNLOADS = 6;
-  const CF_PAGE_SIZE = 50;
-  const CF_MAX_TRIES = 10;
-  // CurseForge modLoaderType enum <-> our loader names.
-  const CF_LOADER = { Forge: 1, LiteLoader: 3, Fabric: 4, Quilt: 5, NeoForge: 6 };
-  const CF_LOADER_NAME = { 1: 'Forge', 2: 'Cauldron', 3: 'LiteLoader', 4: 'Fabric', 5: 'Quilt', 6: 'NeoForge' };
+  // ── CurseForge ──
+  // The old /api/v1/* JSON endpoints now return 403; the live site is a Next.js
+  // SSR app. We fetch the same /minecraft/search HTML the user's browser gets
+  // (200 in a real, cookie'd session) and parse the mod cards + filter sidebar.
+  // Loaders / version / categories are applied server-side via URL params
+  // (observed live on curseforge.com).
+  const CF_ORIGIN = 'https://www.curseforge.com';
+  const CF_SEARCH = CF_ORIGIN + '/minecraft/search';
+  const CF_PAGE_SIZE = 20;
+  const CF_MAX_PAGE = 500;    // CF hard-caps the pager at 500 pages (~10k mods)
+  const CF_MAX_TRIES = 8;
+  // Loader name -> CF gameVersionTypeId (the only 4 CF lists for MC mods).
+  const CF_LOADER_TYPE = { Forge: 1, Fabric: 4, Quilt: 5, NeoForge: 6 };
+  const CF_LOADERS = ['Forge', 'Fabric', 'NeoForge', 'Quilt'];
 
-  // Diagnostics for the CF layer are ON in the alpha (per project decision)
-  // while the undocumented endpoint stabilizes. Modrinth stays silent.
+  // Diagnostics for the CF layer are ON in the alpha. Modrinth stays silent.
   const CF_DEBUG = true;
   function cfLog(...a) { if (CF_DEBUG) { try { console.debug('[MRMR/cf]', ...a); } catch {} } }
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
   async function fetchJSON(url, attempt = 0) {
     const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
@@ -38,7 +39,9 @@ MRMR.api = (() => {
     return res.json();
   }
 
-  async function getGameVersions() {
+  async function getGameVersions(site) {
+    site = site || (window.MRMR && MRMR.site && MRMR.site.detect()) || 'modrinth';
+    if (site === 'curseforge') return getGameVersionsCF();
     const cached = await MRMR.storage.getCached('gameVersions');
     if (cached) return cached;
     const data = await fetchJSON(BASE + '/tag/game_version');
@@ -175,18 +178,128 @@ MRMR.api = (() => {
     return typeof location !== 'undefined' && /(^|\.)curseforge\.com$/i.test(location.hostname);
   }
 
-  async function cfFetch(url, attempt = 0) {
-    cfLog('GET', url);
-    const res = await fetch(url, { headers: { 'Accept': 'application/json' }, credentials: 'include' });
-    if (res.status === 429 && attempt < 2) { await sleep(2000); return cfFetch(url, attempt + 1); }
-    if (!res.ok) { cfLog('HTTP', res.status); throw new Error('HTTP ' + res.status); }
-    const ct = res.headers.get('content-type') || '';
-    if (!ct.includes('json')) {
-      // Cloudflare challenge / HTML instead of JSON.
-      cfLog('non-JSON response (Cloudflare?)', ct);
-      throw new Error('CurseForge blocked the request');
+  // Fetch a CurseForge page → Document. Plain HTML passes Cloudflare in a real
+  // session (the /api/v1 JSON endpoints return 403).
+  async function cfFetchDoc(url) {
+    cfLog('GET', url.replace(CF_ORIGIN, ''));
+    const res = await fetch(url, { credentials: 'include', headers: { 'Accept': 'text/html' } });
+    if (!res.ok) { cfLog('HTTP', res.status); throw new Error('CurseForge HTTP ' + res.status); }
+    return new DOMParser().parseFromString(await res.text(), 'text/html');
+  }
+
+  // "367.3M" / "10.5K" / "842" -> number
+  function cfParseCount(s) {
+    const m = String(s || '').replace(/,/g, '').match(/([\d.]+)\s*([KMB]?)/i);
+    if (!m) return 0;
+    const mult = { '': 1, K: 1e3, M: 1e6, B: 1e9 }[(m[2] || '').toUpperCase()] || 1;
+    return Math.round((parseFloat(m[1]) || 0) * mult);
+  }
+
+  function cfText(el, sel) {
+    const e = el.querySelector(sel);
+    return e ? e.textContent.replace(/\s+/g, ' ').trim() : '';
+  }
+
+  // Build the CF search URL. Loaders / version range / categories are applied
+  // server-side via the exact params CF itself uses (observed live).
+  function cfSearchUrl(filters, page, cfReleases) {
+    const p = new URLSearchParams();
+    p.set('class', 'mc-mods');
+    p.set('pageSize', String(CF_PAGE_SIZE));
+    p.set('sortBy', 'totalDownloads');
+    if (page > 1) p.set('page', String(page));
+    if (filters.loaders && filters.loaders.length) {
+      const ids = filters.loaders.map(l => CF_LOADER_TYPE[l]).filter(Boolean);
+      if (ids.length) p.set('gameVersionTypeId', ids.join(','));
     }
-    return res.json();
+    if (filters.versionFrom || filters.versionTo) {
+      const range = computeVersionsRange(cfReleases || [], filters.versionFrom, filters.versionTo);
+      // Drop it when it spans every release (== "any version").
+      if (range.length && range.length < (cfReleases || []).length) p.set('version', range.join(','));
+    }
+    if (filters.cfCategories && filters.cfCategories.length) {
+      p.set('categories', filters.cfCategories.join(','));
+    }
+    return CF_SEARCH + '?' + p.toString();
+  }
+
+  function cfParseCards(doc) {
+    return [...doc.querySelectorAll('.project-card')].map(card => {
+      const nameA = card.querySelector('a.name');
+      const href = (nameA && nameA.getAttribute('href')) || '';
+      const slug = (href.match(/\/minecraft\/mc-mods\/([^/?#]+)/) || [])[1] || '';
+      const flavor = cfText(card, '.detail-flavor');
+      const img = card.querySelector('.art img');
+      const title = (nameA && (nameA.getAttribute('title') || '')
+        .replace(/^Go to /, '').replace(/ Project Page$/, '')) || cfText(card, 'a.name');
+      return {
+        title: title || 'Untitled',
+        slug,
+        author: cfText(card, '.author-name a') || cfText(card, '.author-name'),
+        downloads: cfParseCount(cfText(card, '.detail-downloads')),
+        follows: 0,
+        description: cfText(card, '.description'),
+        version: cfText(card, '.detail-game-version'),
+        loaders: flavor ? [flavor] : [],
+        icon_url: (img && img.getAttribute('src')) || null,
+        url: slug ? (CF_ORIGIN + '/minecraft/mc-mods/' + slug) : (CF_ORIGIN + href)
+      };
+    }).filter(m => m.slug);
+  }
+
+  function cfTotalPages(doc) {
+    const nums = [];
+    doc.querySelectorAll('.page-numbers').forEach(el => {
+      const n = parseInt((el.textContent || '').trim(), 10);
+      if (Number.isFinite(n)) nums.push(n);
+      el.querySelectorAll('*').forEach(c => {
+        const k = parseInt((c.textContent || '').trim(), 10);
+        if (Number.isFinite(k)) nums.push(k);
+      });
+    });
+    if (!nums.length) {
+      const m = (doc.body.textContent || '').match(/\bof\s+([\d,]+)/);
+      if (m) nums.push(parseInt(m[1].replace(/,/g, ''), 10));
+    }
+    return nums.length ? Math.min(Math.max(...nums), CF_MAX_PAGE) : 1;
+  }
+
+  // { count, plus } from "10,000+ Projects" / "1,234 Projects", else null.
+  function cfTotalCount(doc) {
+    const el = [...doc.querySelectorAll('*')].find(e => e.childElementCount === 0 && /Projects/i.test(e.textContent));
+    const m = el && el.textContent.replace(/\s+/g, ' ').match(/([\d,]+)\s*(\+?)\s*Projects/i);
+    return m ? { count: parseInt(m[1].replace(/,/g, ''), 10), plus: m[2] === '+' } : null;
+  }
+
+  // Filter sidebar -> { categories:[{value:slug,label}] (top-level only),
+  //                     versions:[{version, version_type}] (newest first) }
+  function cfParsePanel(doc) {
+    const catLinks = [...doc.querySelectorAll('a[href*="categories="]')].map(a => {
+      const raw = ((a.getAttribute('href') || '').match(/[?&]categories=([^&]+)/) || [])[1];
+      const lab = a.querySelector('[title]');
+      const label = lab ? (lab.getAttribute('title') || '').trim()
+        : (a.textContent || '').replace(/\s+/g, ' ').trim();
+      let depth = 0, p = a.parentElement;
+      while (p) { if (p.tagName === 'UL') depth++; p = p.parentElement; }
+      return { value: raw ? decodeURIComponent(raw).split(',').pop() : '', label, depth };
+    }).filter(c => c.value && c.label);
+    const minDepth = catLinks.length ? Math.min(...catLinks.map(c => c.depth)) : 0;
+    const catSeen = new Set();
+    const categories = [];
+    for (const c of catLinks) {
+      if (c.depth !== minDepth || catSeen.has(c.value)) continue;
+      catSeen.add(c.value);
+      categories.push({ value: c.value, label: c.label });
+    }
+
+    const verSeen = new Set();
+    const versions = [];
+    for (const a of doc.querySelectorAll('a[href*="version="]')) {
+      const raw = ((a.getAttribute('href') || '').match(/[?&]version=([^&]+)/) || [])[1];
+      const ver = raw ? decodeURIComponent(raw).split(',').pop() : '';
+      if (/^\d/.test(ver) && !verSeen.has(ver)) { verSeen.add(ver); versions.push({ version: ver, version_type: 'release' }); }
+    }
+    return { categories, versions };
   }
 
   // Popup → active CurseForge tab's content script (same-origin fetch there).
@@ -207,107 +320,79 @@ MRMR.api = (() => {
     return resp.result;
   }
 
+  // Fetch + parse the filter sidebar once; cache categories + versions per-site.
+  async function cfPanel() {
+    const doc = await cfFetchDoc(CF_SEARCH + '?class=mc-mods&pageSize=' + CF_PAGE_SIZE);
+    const { categories, versions } = cfParsePanel(doc);
+    cfLog('panel: categories', categories.length, 'versions', versions.length);
+    await MRMR.storage.setCached('cf:categories', categories);
+    await MRMR.storage.setCached('cf:gameVersions', versions);
+    return { categories, versions };
+  }
+
   async function getCategoriesCF() {
     if (!onCFPage()) {
-      // Popup: ask the active CF tab; if there is none, just no categories.
-      try { return await cfViaActiveTab({ type: 'MRMR_CF_CATEGORIES' }); }
-      catch { return []; }
+      try { return await cfViaActiveTab({ type: 'MRMR_CF_CATEGORIES' }); } catch { return []; }
     }
-    const cached = await MRMR.storage.getCached('cfCategories');
+    const cached = await MRMR.storage.getCached('cf:categories');
     if (cached) return cached;
-    const json = await cfFetch(CF_CATEGORIES + '?gameId=' + CF_GAME_ID + '&classId=' + CF_CLASS_ID);
-    const list = Array.isArray(json) ? json : (json.data || []);
-    const cats = list
-      .filter(c => c && c.name != null && c.id != null)
-      .map(c => ({ value: String(c.id), label: c.name, slug: c.slug }));
-    cfLog('categories', cats.length);
-    await MRMR.storage.setCached('cfCategories', cats);
-    return cats;
+    return (await cfPanel()).categories;
   }
 
-  function mapCFMod(mod) {
-    const lfi = Array.isArray(mod.latestFilesIndexes) ? mod.latestFilesIndexes : [];
-    const loaders = [...new Set(lfi.map(f => CF_LOADER_NAME[f.modLoader]).filter(Boolean))];
-    const url = (mod.links && mod.links.websiteUrl) ||
-      ('https://www.curseforge.com/minecraft/mc-mods/' + mod.slug);
-    return {
-      title: mod.name,
-      author: (mod.authors && mod.authors[0] && mod.authors[0].name) || 'unknown',
-      downloads: mod.downloadCount || 0,
-      follows: mod.thumbsUpCount || 0,   // CF has no "follows"; thumbs-up is the closest
-      description: mod.summary || '',
-      icon_url: (mod.logo && (mod.logo.thumbnailUrl || mod.logo.url)) || null,
-      loaders,
-      slug: mod.slug,
-      url
-    };
+  async function getGameVersionsCF() {
+    if (!onCFPage()) {
+      try { return await cfViaActiveTab({ type: 'MRMR_CF_VERSIONS' }); } catch { return []; }
+    }
+    const cached = await MRMR.storage.getCached('cf:gameVersions');
+    if (cached) return cached;
+    return (await cfPanel()).versions;
   }
 
-  // Parity via client-side filtering + reroll (same idea as the Modrinth
-  // version filter): CF search takes one loader / one version per query, so we
-  // sample random pages and keep the first candidate matching ALL filters.
+  // Random CF mod: pick a random results page (loader/version/categories already
+  // applied server-side), pick a random card, client-filter by min downloads.
   async function searchRandomModCF(filters) {
-    const base = CF_SEARCH +
-      '?gameId=' + CF_GAME_ID + '&classId=' + CF_CLASS_ID +
-      '&sortField=' + CF_SORT_DOWNLOADS + '&sortOrder=desc&pageSize=' + CF_PAGE_SIZE;
-
+    let cfReleases = [];
+    if (filters.versionFrom || filters.versionTo) {
+      try { cfReleases = await getGameVersionsCF(); } catch { cfReleases = []; }
+    }
     const minDL = Number(filters.minDownloads) || 0;
 
-    let wantLoaders = null;
-    if (filters.loaders && filters.loaders.length) {
-      const ids = filters.loaders.map(l => CF_LOADER[l]).filter(Boolean);
-      if (!ids.length) return { empty: true, reason: 'cf_loader' };
-      wantLoaders = new Set(ids);
+    const first = await cfFetchDoc(cfSearchUrl(filters, 1, cfReleases));
+    const firstCards = cfParseCards(first);
+    const total = cfTotalCount(first);
+    if (!firstCards.length) {
+      if (total && total.count === 0) return { empty: true };
+      // 200 but nothing parsed where results were expected → markup changed.
+      cfLog('no .project-card parsed — CF layout may have changed');
+      throw new Error('CurseForge layout not recognized');
     }
+    // Prefer the "N Projects" count (exact) over the pager's max number, then
+    // cap at CF's 500-page limit. Avoids rolling pages past the real results.
+    let totalPages = cfTotalPages(first);
+    if (total && total.count) totalPages = Math.min(Math.ceil(total.count / CF_PAGE_SIZE), CF_MAX_PAGE);
+    totalPages = Math.max(1, totalPages);
+    const biased = (total && total.plus) || totalPages >= CF_MAX_PAGE;
 
-    let wantVersions = null;
-    if (filters.versionFrom || filters.versionTo) {
-      const gv = await getGameVersions();
-      const releases = gv.filter(v => v.version_type === 'release');
-      const range = computeVersionsRange(releases, filters.versionFrom, filters.versionTo);
-      if (range.length) wantVersions = new Set(range);
-    }
-
-    let wantCats = null;
-    const selCats = (filters.cfCategories || []).map(Number).filter(n => !isNaN(n));
-    if (selCats.length) wantCats = selCats;
-    const matchAll = filters.match === 'all';
-
-    const matches = (mod) => {
-      if (minDL > 0 && (mod.downloadCount || 0) < minDL) return false;
-      const lfi = Array.isArray(mod.latestFilesIndexes) ? mod.latestFilesIndexes : [];
-      if (wantLoaders && !lfi.some(f => wantLoaders.has(f.modLoader))) return false;
-      if (wantVersions && !lfi.some(f => wantVersions.has(f.gameVersion))) return false;
-      if (wantCats) {
-        const have = new Set((mod.categories || []).map(c => c.id));
-        if (matchAll) { if (!wantCats.every(id => have.has(id))) return false; }
-        else if (!wantCats.some(id => have.has(id))) return false;
-      }
-      return true;
+    const pickFrom = (cards) => {
+      const good = minDL > 0 ? cards.filter(m => m.downloads >= minDL) : cards;
+      return good.length ? good[MRMR.utils.randInt(good.length)] : null;
     };
 
-    const first = await cfFetch(base + '&index=0');
-    const total = first.pagination ? first.pagination.totalCount
-      : (Array.isArray(first.data) ? first.data.length : 0);
-    cfLog('total', total);
-    if (!total) return { empty: true };
-
-    const capped = Math.min(total, OFFSET_CAP);
-    const biased = total > OFFSET_CAP;
-    const maxIndex = Math.max(0, capped - CF_PAGE_SIZE);
-
-    for (let i = 0; i < CF_MAX_TRIES; i++) {
-      const index = MRMR.utils.randInt(maxIndex + 1);
-      const page = (index === 0) ? first : await cfFetch(base + '&index=' + index);
-      const hits = Array.isArray(page.data) ? page.data : [];
-      const good = hits.filter(matches);
-      cfLog('try', i, 'index', index, 'hits', hits.length, 'matches', good.length);
-      if (good.length) {
-        const pick = good[MRMR.utils.randInt(good.length)];
-        return { mod: mapCFMod(pick), biased };
-      }
+    // Results are sorted by downloads desc. A page with cards but none meeting
+    // minDownloads (or a page past the last result) means every later page
+    // misses too — so shrink the upper bound to converge on the live region.
+    let hi = totalPages;
+    let chosen = null;
+    for (let i = 0; i < CF_MAX_TRIES && hi >= 1 && !chosen; i++) {
+      const page = 1 + MRMR.utils.randInt(hi);
+      const cards = page === 1 ? firstCards
+        : cfParseCards(await cfFetchDoc(cfSearchUrl(filters, page, cfReleases)));
+      cfLog('try', i, 'page', page, '/', totalPages, 'cards', cards.length);
+      chosen = pickFrom(cards);
+      if (!chosen && (cards.length === 0 || minDL > 0)) hi = Math.min(hi, page - 1);
     }
-    return { empty: true, reason: 'cf_filter' };
+    if (chosen) return { mod: chosen, biased };
+    return { empty: true, reason: minDL > 0 ? 'cf_min_downloads' : 'cf_empty' };
   }
 
   // ── Dispatcher: Modrinth direct; CurseForge same-origin or via tab ──
@@ -326,6 +411,7 @@ MRMR.api = (() => {
     searchRandomMod,
     buildFacets,
     computeVersionsRange,
-    OFFSET_CAP
+    OFFSET_CAP,
+    CF_LOADERS
   };
 })();
