@@ -5,20 +5,24 @@ MRMR.widget = (() => {
   const SIDE_OPTIONS = ['Any', 'Client', 'Server'];
   const MATCH_OPTIONS = ['any', 'all'];
 
-  const DICE_MARK_SVG = `
-    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-      <rect x="2" y="2" width="16" height="16" rx="4" fill="#1bd96a"/>
-      <circle cx="7" cy="7" r="1.3" fill="#08110c"/>
-      <circle cx="13" cy="7" r="1.3" fill="#08110c"/>
-      <circle cx="10" cy="10" r="1.3" fill="#08110c"/>
-      <circle cx="7" cy="13" r="1.3" fill="#08110c"/>
-      <circle cx="13" cy="13" r="1.3" fill="#08110c"/>
-    </svg>`;
+  // Dice face (5 dots) — colored by the accent foreground token so it swaps
+  // with the theme. The gradient cube itself is the `.mr-brand-logo` container.
+  const DICE_DOTS = (s, r) =>
+    `<svg width="${s}" height="${s}" viewBox="0 0 20 20" fill="none" aria-hidden="true">` +
+    `<circle cx="6" cy="6" r="${r}" fill="var(--mr-accent-fg)"/>` +
+    `<circle cx="14" cy="6" r="${r}" fill="var(--mr-accent-fg)"/>` +
+    `<circle cx="10" cy="10" r="${r}" fill="var(--mr-accent-fg)"/>` +
+    `<circle cx="6" cy="14" r="${r}" fill="var(--mr-accent-fg)"/>` +
+    `<circle cx="14" cy="14" r="${r}" fill="var(--mr-accent-fg)"/></svg>`;
+  const DICE_MARK_SVG = DICE_DOTS(18, 1.5);
+  const DICE_BIG_SVG = DICE_DOTS(42, 1.6);
 
-  const ICON_DOWNLOAD = `<svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 1.5v5.5M3 5l2.5 2.5L8 5M1.5 9h8"/></svg>`;
-  const ICON_HEART = `<svg width="11" height="11" viewBox="0 0 11 11" fill="currentColor"><path d="M5.5 9.5s-3.5-2-3.5-4.5a2 2 0 013.5-1.3A2 2 0 019 5c0 2.5-3.5 4.5-3.5 4.5z"/></svg>`;
-  const ICON_LIST = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="#1bd96a" stroke-width="1.8" stroke-linecap="round"><path d="M2 4h8M2 6h8M2 8h5"/></svg>`;
+  const ICON_DOWNLOAD = `<svg width="12" height="12" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 1.5v5.5M3 5l2.5 2.5L8 5M1.5 9h8"/></svg>`;
+  const ICON_HEART = `<svg width="12" height="12" viewBox="0 0 11 11" fill="currentColor"><path d="M5.5 9.5s-3.5-2-3.5-4.5a2 2 0 013.5-1.3A2 2 0 019 5c0 2.5-3.5 4.5-3.5 4.5z"/></svg>`;
+  const ICON_LIST = `<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="var(--mr-accent)" stroke-width="1.8" stroke-linecap="round"><path d="M2 4h8M2 6h8M2 8h5"/></svg>`;
   const ICON_CHEVRON = `<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2.5 4L5 6.5 7.5 4"/></svg>`;
+  const ICON_REFRESH = `<svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M9.5 3.5a4 4 0 10.8 3"/><path d="M9.8 1.5v2.2H7.6"/></svg>`;
+  const ICON_EXTLINK = `<svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3h6v6M10 3L3 10"/></svg>`;
 
   function create(host, opts) {
     opts = opts || {};
@@ -44,6 +48,11 @@ MRMR.widget = (() => {
       root = host;
     }
 
+    // ── Cosmetic background glow (toggled via the logo cube) ──
+    let glowOn = true;
+    function applyGlow() { panel.classList.toggle('is-glow-off', !glowOn); }
+    function toggleGlow() { glowOn = !glowOn; applyGlow(); }
+
     // Panel structure (built once)
     const closeBtn = isModal
       ? h('button', {
@@ -54,11 +63,20 @@ MRMR.widget = (() => {
         }, '×')
       : null;
 
+    const glowPanel = h('div', { class: 'mr-glow' });
+
+    const countPill = h('span', { class: 'mr-count-pill' }, 'no filters');
+
     const headerEl = h('div', { class: 'mr-header' },
-      h('div', { class: 'mr-brand' },
-        h('span', { class: 'mr-brand-logo', html: DICE_MARK_SVG }),
-        h('span', { class: 'mr-brand-text' }, 'Random Mod')
-      )
+      h('button', {
+        class: 'mr-brand-logo',
+        title: 'Toggle background glow',
+        'aria-label': 'Toggle background glow',
+        onClick: toggleGlow,
+        html: DICE_MARK_SVG
+      }),
+      h('span', { class: 'mr-brand-text' }, 'Random Mod'),
+      countPill
     );
 
     const bodyEl = h('div', { class: 'mr-body' });
@@ -66,7 +84,7 @@ MRMR.widget = (() => {
 
     const panel = h('div',
       { class: 'mr-panel' + (isModal ? '' : ' mr-panel-popup') },
-      closeBtn, headerEl, bodyEl, footerEl
+      glowPanel, closeBtn, headerEl, bodyEl, footerEl
     );
 
     if (isModal) backdrop.appendChild(panel);
@@ -114,6 +132,16 @@ MRMR.widget = (() => {
       render();
     }
 
+    function activeCount() {
+      let n = 0;
+      if (filters.loaders.length) n++;
+      if (filters.versionFrom || filters.versionTo) n++;
+      if (filters.categories.length) n++;
+      if (filters.side !== 'Any') n++;
+      if ((parseInt(filters.minDownloads || '0', 10) || 0) > 0) n++;
+      return n === 0 ? 'no filters' : n + (n === 1 ? ' filter' : ' filters');
+    }
+
     async function roll() {
       setState('loading');
       lastError = null;
@@ -146,7 +174,7 @@ MRMR.widget = (() => {
       }, label);
     }
 
-    function renderFiltersBody(dimmed) {
+    function renderFiltersBody() {
       const toggle = (key, v) => {
         const arr = filters[key];
         const next = arr.includes(v) ? arr.filter(x => x !== v) : [...arr, v];
@@ -223,9 +251,10 @@ MRMR.widget = (() => {
         if (cleaned !== e.target.value) e.target.value = cleaned;
         filters = { ...filters, minDownloads: cleaned };
         persist();
+        if (countPill) countPill.textContent = activeCount();
       });
 
-      return h('div', { class: 'mr-filters' + (dimmed ? ' is-dimmed' : '') },
+      return h('div', { class: 'mr-filters' },
         h('div', null,
           h('div', { class: 'mr-section-label' }, 'Loader'),
           h('div', { class: 'mr-pills' }, loaderPills)
@@ -255,7 +284,10 @@ MRMR.widget = (() => {
           h('button', {
             class: 'mr-reset-btn',
             onClick: () => resetFilters()
-          }, 'Reset filters')
+          },
+            h('span', { style: 'display:inline-flex;', html: ICON_REFRESH }),
+            'Reset'
+          )
         )
       );
     }
@@ -293,12 +325,12 @@ MRMR.widget = (() => {
         ? h('img', { class: 'mr-mod-icon', src: mod.icon_url, alt: '' })
         : h('div', { class: 'mr-mod-icon-fallback' }, (mod.title || '?').charAt(0).toUpperCase());
 
-      const biasedBadge = biased
-        ? h('button', {
-            class: 'mr-biased-badge',
+      const biasedPill = biased
+        ? h('span', {
+            class: 'mr-biased-pill',
             title: 'Very popular filter set — random pick is slightly biased toward the top 10 000 results.',
             'aria-label': 'Biased pick'
-          }, '?')
+          }, 'biased ?')
         : null;
 
       const loaderChips = Array.isArray(mod.loaders)
@@ -306,31 +338,35 @@ MRMR.widget = (() => {
         : [];
 
       return h('div', { class: 'mr-mod-card' },
-        h('div', { class: 'mr-mod-head' },
+        h('div', { class: 'mr-card-banner' }, biasedPill),
+        h('div', { class: 'mr-card-body' },
           iconEl,
-          h('div', { class: 'mr-mod-meta' },
-            h('div', { class: 'mr-mod-title-row' },
-              h('div', { class: 'mr-mod-title' }, mod.title || 'Untitled'),
-              biasedBadge
-            ),
-            h('div', { class: 'mr-mod-author' },
-              'by ',
-              h('span', { class: 'mr-mod-author-name' }, mod.author || 'unknown')
-            ),
-            h('div', { class: 'mr-mod-stats' },
-              h('span', { class: 'mr-mod-stat' },
-                h('span', { html: ICON_DOWNLOAD }),
+          h('div', { class: 'mr-mod-title-row' },
+            h('div', { class: 'mr-mod-title' }, mod.title || 'Untitled')
+          ),
+          h('div', { class: 'mr-mod-author' },
+            'by ',
+            h('span', { class: 'mr-mod-author-name' }, mod.author || 'unknown')
+          ),
+          h('div', { class: 'mr-mod-stats' },
+            h('div', { class: 'mr-mod-stat' },
+              h('div', { class: 'mr-mod-stat-val' },
+                h('span', { class: 'mr-ic', html: ICON_DOWNLOAD }),
                 formatCount(mod.downloads)
               ),
-              h('span', { class: 'mr-mod-stat' },
-                h('span', { html: ICON_HEART }),
+              h('div', { class: 'mr-mod-stat-label' }, 'downloads')
+            ),
+            h('div', { class: 'mr-mod-stat' },
+              h('div', { class: 'mr-mod-stat-val' },
+                h('span', { class: 'mr-ic', html: ICON_HEART }),
                 formatCount(mod.follows)
-              )
+              ),
+              h('div', { class: 'mr-mod-stat-label' }, 'followers')
             )
-          )
-        ),
-        h('div', { class: 'mr-mod-desc' }, mod.description || ''),
-        loaderChips.length ? h('div', { class: 'mr-mod-loaders' }, loaderChips) : null
+          ),
+          mod.description ? h('div', { class: 'mr-mod-desc' }, mod.description) : null,
+          loaderChips.length ? h('div', { class: 'mr-mod-loaders' }, loaderChips) : null
+        )
       );
     }
 
@@ -338,24 +374,32 @@ MRMR.widget = (() => {
       const { mod, biased } = lastResult;
       return [
         renderSummaryBar(),
-        filtersOpenInResult ? renderFiltersBody(false) : null,
-        h('div', { class: 'mr-result-body' },
+        filtersOpenInResult ? renderFiltersBody() : null,
+        h('div', { class: 'mr-result-content' },
           renderModCard(mod, biased),
           h('div', { class: 'mr-result-actions' },
             h('button', {
-              class: 'mr-btn mr-btn-primary',
+              class: 'mr-btn-open',
               onClick: () => openModrinth()
-            }, 'Open on Modrinth'),
+            },
+              h('span', null, 'Open on Modrinth'),
+              h('span', { style: 'display:inline-flex;', html: ICON_EXTLINK })
+            ),
             h('button', {
               class: 'mr-btn mr-btn-secondary',
+              title: 'Roll again',
               onClick: () => roll()
-            },
-              h('span', null, '🎲'),
-              h('span', null, 'Roll again')
-            )
+            }, h('span', null, '🎲'))
           )
         )
       ];
+    }
+
+    function renderLoading() {
+      return h('div', { class: 'mr-loading' },
+        h('div', { class: 'mr-loading-dice', html: DICE_BIG_SVG }),
+        h('div', { class: 'mr-loading-text' }, 'Rolling the dice…')
+      );
     }
 
     function renderCentered(cfg) {
@@ -375,8 +419,8 @@ MRMR.widget = (() => {
     function render() {
       // Body
       const body = [];
-      if (state === 'filters') body.push(renderFiltersBody(false));
-      else if (state === 'loading') body.push(renderFiltersBody(true));
+      if (state === 'filters') body.push(renderFiltersBody());
+      else if (state === 'loading') body.push(renderLoading());
       else if (state === 'result') body.push(...renderResult());
       else if (state === 'empty') body.push(renderCentered({
         glyph: '😕',
@@ -396,23 +440,22 @@ MRMR.widget = (() => {
 
       bodyEl.replaceChildren(...body.filter(Boolean));
 
-      // Footer
+      // Footer (CTA on the filters screen only; loading is centered in body)
       footerEl.replaceChildren();
       if (state === 'filters') {
         footerEl.className = 'mr-footer';
         footerEl.appendChild(
           h('button', { class: 'mr-btn mr-btn-primary', onClick: () => roll() },
-            h('span', { style: 'font-size:16px;' }, '🎲'),
+            h('span', { style: 'font-size:17px;' }, '🎲'),
             h('span', null, 'Random Mod')
           )
         );
-      } else if (state === 'loading') {
-        footerEl.className = 'mr-footer-loading';
-        footerEl.appendChild(h('div', { class: 'mr-spinner' }));
-        footerEl.appendChild(h('div', { class: 'mr-loading-text' }, 'Rolling the dice…'));
       } else {
         footerEl.className = 'mr-footer-slot';
       }
+
+      // Header active-filter count
+      if (countPill) countPill.textContent = activeCount();
     }
 
     // ── Init flow ─────────────────────────────────────────────
