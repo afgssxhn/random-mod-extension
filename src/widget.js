@@ -28,6 +28,8 @@ MRMR.widget = (() => {
     opts = opts || {};
     const mode = opts.mode || 'modal';
     const isModal = mode === 'modal';
+    const site = opts.site || (window.MRMR && MRMR.site && MRMR.site.detect()) || 'modrinth';
+    const isCF = site === 'curseforge';
 
     // Root + styles
     let root, backdrop;
@@ -47,6 +49,7 @@ MRMR.widget = (() => {
       host.classList.add('mr-root');
       root = host;
     }
+    root.classList.add('mr-site-' + site);
 
     // ── Cosmetic background glow (toggled via the logo cube) ──
     let glowOn = true;
@@ -137,7 +140,7 @@ MRMR.widget = (() => {
       if (filters.loaders.length) n++;
       if (filters.versionFrom || filters.versionTo) n++;
       if (filters.categories.length) n++;
-      if (filters.side !== 'Any') n++;
+      if (!isCF && filters.side !== 'Any') n++;
       if ((parseInt(filters.minDownloads || '0', 10) || 0) > 0) n++;
       return n === 0 ? 'no filters' : n + (n === 1 ? ' filter' : ' filters');
     }
@@ -160,9 +163,12 @@ MRMR.widget = (() => {
       }
     }
 
-    function openModrinth() {
+    function openOnSite() {
       if (!lastResult || !lastResult.mod) return;
-      const url = 'https://modrinth.com/mod/' + lastResult.mod.slug;
+      const mod = lastResult.mod;
+      // Prefer an explicit URL the data layer may attach (CurseForge), else
+      // build it from the active site's mod path + slug.
+      const url = mod.url || (MRMR.site.meta(site).modPath + mod.slug);
       window.open(url, '_blank', 'noopener');
     }
 
@@ -272,7 +278,7 @@ MRMR.widget = (() => {
             ? h('div', { class: 'mr-pills' }, catPills)
             : h('div', { style: 'font-size:12px;color:var(--mr-text-faint);' }, 'Loading…')
         ),
-        h('div', null,
+        isCF ? null : h('div', null,
           h('div', { class: 'mr-section-label' }, 'Side'),
           sideSeg
         ),
@@ -302,7 +308,7 @@ MRMR.widget = (() => {
       const vFrom = filters.versionFrom || 'any';
       const vTo = filters.versionTo || 'any';
       if (filters.versionFrom || filters.versionTo) parts.push(vFrom + '–' + vTo);
-      if (filters.side !== 'Any') parts.push(filters.side + ' side');
+      if (!isCF && filters.side !== 'Any') parts.push(filters.side + ' side');
       if (filters.categories.length) parts.push(filters.categories.length + ' cat.');
 
       return h('button', {
@@ -380,9 +386,9 @@ MRMR.widget = (() => {
           h('div', { class: 'mr-result-actions' },
             h('button', {
               class: 'mr-btn-open',
-              onClick: () => openModrinth()
+              onClick: () => openOnSite()
             },
-              h('span', null, 'Open on Modrinth'),
+              h('span', null, 'Open on ' + MRMR.site.label(site)),
               h('span', { style: 'display:inline-flex;', html: ICON_EXTLINK })
             ),
             h('button', {
@@ -431,7 +437,7 @@ MRMR.widget = (() => {
       }));
       else if (state === 'error') body.push(renderCentered({
         glyph: '⚠',
-        title: 'Modrinth is unreachable',
+        title: MRMR.site.label(site) + ' is unreachable',
         body: lastError ? 'Details: ' + lastError : 'Check your connection and try again.',
         cta: 'Retry',
         danger: true,

@@ -34,6 +34,26 @@ MRMR.css = `
   --mr-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10' fill='none' stroke='%231bd96a' stroke-width='1.5' stroke-linecap='round'><path d='M2.5 4L5 6.5 7.5 4'/></svg>");
 }
 
+/* ── Per-site accent swap (set via a class on the widget root) ── */
+.mr-root.mr-site-modrinth {
+  --mr-accent: #1bd96a;
+  --mr-accent-hi: #25e77a;
+  --mr-accent-fg: #08110c;
+  --mr-accent-tint: rgba(27, 217, 106, 0.10);
+  --mr-accent-edge: rgba(27, 217, 106, 0.28);
+  --mr-accent-glow: rgba(27, 217, 106, 0.18);
+  --mr-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10' fill='none' stroke='%231bd96a' stroke-width='1.5' stroke-linecap='round'><path d='M2.5 4L5 6.5 7.5 4'/></svg>");
+}
+.mr-root.mr-site-curseforge {
+  --mr-accent: #f16436;
+  --mr-accent-hi: #eb622b;
+  --mr-accent-fg: #1f0d04;
+  --mr-accent-tint: rgba(241, 100, 54, 0.10);
+  --mr-accent-edge: rgba(241, 100, 54, 0.30);
+  --mr-accent-glow: rgba(241, 100, 54, 0.20);
+  --mr-chevron: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10' fill='none' stroke='%23f16436' stroke-width='1.5' stroke-linecap='round'><path d='M2.5 4L5 6.5 7.5 4'/></svg>");
+}
+
 .mr-root, .mr-root * { box-sizing: border-box; }
 .mr-root {
   font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;

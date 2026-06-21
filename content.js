@@ -5,6 +5,14 @@
   const HOST_ID = 'mrmr-modal-host';
   const MIN_DESKTOP_WIDTH = 1024;
 
+  const SITE = (window.MRMR && MRMR.site && MRMR.site.detect()) || 'modrinth';
+  const ACCENTS = {
+    modrinth:   { color: '#1bd96a', edge: 'rgba(27, 217, 106, 0.35)', hover: 'rgba(27, 217, 106, 0.16)' },
+    curseforge: { color: '#f16436', edge: 'rgba(241, 100, 54, 0.35)', hover: 'rgba(241, 100, 54, 0.16)' }
+  };
+  const AC = ACCENTS[SITE] || ACCENTS.modrinth;
+  const BTN_BG = '#121013';
+
   function createButton() {
     const a = document.createElement('a');
     a.id = 'mrmr-roll-btn';
@@ -20,9 +28,9 @@
       'width:44px',
       'height:44px',
       'border-radius:12px',
-      'background:#08110c',
-      'border:1px solid rgba(27, 217, 106, 0.35)',
-      'color:#1bd96a',
+      'background:' + BTN_BG,
+      'border:1px solid ' + AC.edge,
+      'color:' + AC.color,
       'cursor:pointer',
       'text-decoration:none',
       'box-shadow:0 4px 14px rgba(0, 0, 0, 0.35)',
@@ -39,10 +47,10 @@
       '</svg>'
     ].join('');
     a.addEventListener('mouseenter', () => {
-      a.style.background = 'rgba(27, 217, 106, 0.16)';
+      a.style.background = AC.hover;
     });
     a.addEventListener('mouseleave', () => {
-      a.style.background = '#08110c';
+      a.style.background = BTN_BG;
     });
     a.addEventListener('click', (e) => {
       e.preventDefault();
@@ -87,7 +95,7 @@
       host.id = HOST_ID;
       document.body.appendChild(host);
     }
-    widget = MRMR.widget.create(host, { mode: 'modal' });
+    widget = MRMR.widget.create(host, { mode: 'modal', site: SITE });
     return widget;
   }
 

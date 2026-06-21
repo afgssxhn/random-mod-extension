@@ -1,4 +1,8 @@
 (() => {
   'use strict';
-  MRMR.widget.create(document.body, { mode: 'popup' }).open();
+  (async () => {
+    let site = 'modrinth';
+    try { site = (await MRMR.site.detectActiveTab()) || 'modrinth'; } catch {}
+    MRMR.widget.create(document.body, { mode: 'popup', site }).open();
+  })();
 })();

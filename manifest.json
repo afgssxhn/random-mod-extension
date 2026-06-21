@@ -27,6 +27,7 @@
       "matches": ["https://modrinth.com/*"],
       "run_at": "document_idle",
       "js": [
+        "src/site.js",
         "src/utils.js",
         "src/storage.js",
         "src/api.js",
