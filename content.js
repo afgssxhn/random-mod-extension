@@ -12,6 +12,10 @@
   };
   const AC = ACCENTS[SITE] || ACCENTS.modrinth;
   const BTN_BG = '#121013';
+  // Top offset tuned per site: Modrinth's header is one short band (72px clears
+  // it); CurseForge stacks a nav bar + a sub-nav (search), so drop below both
+  // (~165px tall) to avoid overlapping its kebab/Sign-In controls.
+  const BTN_TOP = ({ modrinth: '72px', curseforge: '176px' })[SITE] || '72px';
 
   function createButton() {
     const a = document.createElement('a');
@@ -75,7 +79,7 @@
     host.id = BTN_HOST_ID;
     host.style.cssText = [
       'position:fixed',
-      'top:72px',   // just below the site header band, off its controls
+      'top:' + BTN_TOP,   // site-tuned: clears the header band on each site
       'right:16px',
       'z-index:2147483000',   // below the modal backdrop (2147483646)
       'margin:0',
