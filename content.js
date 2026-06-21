@@ -17,50 +17,45 @@
   // (~165px tall) to avoid overlapping its kebab/Sign-In controls.
   const BTN_TOP = ({ modrinth: '72px', curseforge: '176px' })[SITE] || '72px';
 
-  function createButton() {
+  const DICE_SVG = [
+    '<svg width="22" height="22" viewBox="0 0 20 20" fill="none" aria-hidden="true">',
+    '<rect x="2" y="2" width="16" height="16" rx="4" stroke="currentColor" stroke-width="1.5"/>',
+    '<circle cx="7" cy="7" r="1.3" fill="currentColor"/>',
+    '<circle cx="13" cy="7" r="1.3" fill="currentColor"/>',
+    '<circle cx="10" cy="10" r="1.3" fill="currentColor"/>',
+    '<circle cx="7" cy="13" r="1.3" fill="currentColor"/>',
+    '<circle cx="13" cy="13" r="1.3" fill="currentColor"/>',
+    '</svg>'
+  ].join('');
+
+  // The button lives in its OWN Shadow DOM so the host site's global CSS can't
+  // reach it. CurseForge ships rules that stretch bare <div>s (min-width) and
+  // resize <svg> to fill their container — without isolation they deform the
+  // button (oversized dice, wrong width). Inside the shadow it renders
+  // identically on every site; only the accent color (AC) changes.
+  function mountButton(host) {
+    const shadow = host.attachShadow({ mode: 'open' });
+    const style = document.createElement('style');
+    style.textContent =
+      '.mrmr-btn{display:inline-flex;align-items:center;justify-content:center;' +
+      'box-sizing:border-box;width:44px;height:44px;border-radius:12px;' +
+      'background:' + BTN_BG + ';border:1px solid ' + AC.edge + ';color:' + AC.color + ';' +
+      'cursor:pointer;text-decoration:none;box-shadow:0 4px 14px rgba(0,0,0,.35);' +
+      'transition:background .12s, transform .12s;}' +
+      '.mrmr-btn:hover{background:' + AC.hover + ';}' +
+      '.mrmr-btn:active{transform:scale(.94);}' +
+      '.mrmr-btn svg{width:22px;height:22px;display:block;}';
     const a = document.createElement('a');
     a.id = 'mrmr-roll-btn';
+    a.className = 'mrmr-btn';
     a.href = 'javascript:void(0)';
     a.setAttribute('role', 'button');
     a.setAttribute('aria-label', 'Random Mod (Shift+R)');
     a.title = 'Random Mod (Shift+R)';
-    // Standalone floating button (not blended into Modrinth's header).
-    a.style.cssText = [
-      'display:inline-flex',
-      'align-items:center',
-      'justify-content:center',
-      'width:44px',
-      'height:44px',
-      'border-radius:12px',
-      'background:' + BTN_BG,
-      'border:1px solid ' + AC.edge,
-      'color:' + AC.color,
-      'cursor:pointer',
-      'text-decoration:none',
-      'box-shadow:0 4px 14px rgba(0, 0, 0, 0.35)',
-      'transition:background .12s, transform .12s'
-    ].join(';');
-    a.innerHTML = [
-      '<svg width="22" height="22" viewBox="0 0 20 20" fill="none" aria-hidden="true">',
-      '<rect x="2" y="2" width="16" height="16" rx="4" stroke="currentColor" stroke-width="1.5"/>',
-      '<circle cx="7" cy="7" r="1.3" fill="currentColor"/>',
-      '<circle cx="13" cy="7" r="1.3" fill="currentColor"/>',
-      '<circle cx="10" cy="10" r="1.3" fill="currentColor"/>',
-      '<circle cx="7" cy="13" r="1.3" fill="currentColor"/>',
-      '<circle cx="13" cy="13" r="1.3" fill="currentColor"/>',
-      '</svg>'
-    ].join('');
-    a.addEventListener('mouseenter', () => {
-      a.style.background = AC.hover;
-    });
-    a.addEventListener('mouseleave', () => {
-      a.style.background = BTN_BG;
-    });
-    a.addEventListener('click', (e) => {
-      e.preventDefault();
-      openModal();
-    });
-    return a;
+    a.innerHTML = DICE_SVG;
+    a.addEventListener('click', (e) => { e.preventDefault(); openModal(); });
+    shadow.appendChild(style);
+    shadow.appendChild(a);
   }
 
   // Body-level, fixed-position host. It lives OUTSIDE Nuxt's app root
@@ -92,7 +87,7 @@
       'width:max-content !important',
       'max-width:max-content !important'
     ].join(';');
-    host.appendChild(createButton());
+    mountButton(host);
     document.body.appendChild(host);
   }
 
