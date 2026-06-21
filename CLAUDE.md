@@ -29,7 +29,7 @@ src/site.js               MRMR.site.detect() → 'modrinth' | 'curseforge' from 
                           no extra "tabs" permission); fallback 'modrinth'.
 src/utils.js              MRMR.utils: loader slug map, formatCount (K/M), randInt, h() hyperscript.
 src/storage.js            MRMR.storage: chrome.storage.local 24h tag cache + chrome.storage.sync
-                          filters. DEFAULT_FILTERS lives here (incl. per-site cfCategories).
+                          filters (stored per-site). DEFAULT_FILTERS lives here.
 src/api.js                MRMR.api: Modrinth /v2 wrapper + CurseForge SSR layer. Dispatches
                           getGameVersions(site) / getCategories(site) / searchRandomMod(filters, site).
 src/widget.css.js         MRMR.css: inlined stylesheet (template literal). Concept C neutrals +
@@ -158,10 +158,15 @@ widget via the extension icon → popup → same `create(host, {mode:'popup', si
 
 ```
 chrome.storage.sync {
-  filters: { loaders[], versionFrom, versionTo,
-             categories[]   (Modrinth slugs),
-             cfCategories[] (CurseForge slugs),   // per-site; Modrinth's stay untouched
-             match, side, minDownloads }          // loaders/version/side/minDownloads shared
+  // The ENTIRE filter set is kept per site, behind one access layer:
+  // getFilters(site) / setFilters(site, f). Nothing one site sets bleeds to the other.
+  filters: {
+    modrinth:   { loaders[], versionFrom, versionTo, categories[], match, side, minDownloads },
+    curseforge: { loaders[], versionFrom, versionTo, categories[], match, side, minDownloads }
+  }
+  // `categories[]` holds site-native slugs (Modrinth vs CF taxonomy). `side` is
+  // Modrinth-only (hidden/ignored on CF). A one-time migration seeds both sites
+  // from the old flat shape (Modrinth keeps `categories`, CF takes `cfCategories`).
 }
 chrome.storage.local {                            // 24h TTL; misses fall through to source
   'cache:gameVersions'    : { ts, v: GameVersion[] }          // Modrinth /v2 tags
@@ -173,9 +178,13 @@ chrome.storage.local {                            // 24h TTL; misses fall throug
 
 ## Per-site filter differences
 
+Every filter is stored independently per site (see Storage layout). The widget loads the
+active site's object, so reads are a plain `filters.<key>` with no per-key site branching;
+the only site-specific bits are the UI ones below.
+
 - **Loaders:** Modrinth shows the full set (9); CF shows only Forge/Fabric/NeoForge/Quilt.
 - **Categories:** different taxonomies — Modrinth slugs vs CF top-level slugs (parsed from
-  the sidebar, e.g. "API and Library" → `library-api`). Stored separately (per above).
+  the sidebar, e.g. "API and Library" → `library-api`).
 - **Versions:** Modrinth `/v2/tag/game_version` vs CF's own sidebar version list.
 - **Side:** Modrinth only — the Side section is **hidden on CF** (CF search has no
   client/server facet).
