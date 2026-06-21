@@ -75,11 +75,18 @@
     host.id = BTN_HOST_ID;
     host.style.cssText = [
       'position:fixed',
-      'top:72px',   // just below Modrinth's header band, off its controls
+      'top:72px',   // just below the site header band, off its controls
       'right:16px',
       'z-index:2147483000',   // below the modal backdrop (2147483646)
       'margin:0',
-      'padding:0'
+      'padding:0',
+      // CurseForge ships a global rule that leaks min-width:1272px onto bare
+      // <div>s — it stretched this host and pushed the button to mid-screen.
+      // Pin the host to its content size and beat any such site rule.
+      'min-width:0 !important',
+      'min-height:0 !important',
+      'width:max-content !important',
+      'max-width:max-content !important'
     ].join(';');
     host.appendChild(createButton());
     document.body.appendChild(host);
