@@ -105,9 +105,9 @@ MRMR.widget = (() => {
     let isOpen = !isModal;
     let triggerEl = null;
 
-    // Categories are a different taxonomy per site, stored separately.
-    const catKey = isCF ? 'cfCategories' : 'categories';
-    const selectedCats = () => filters[catKey] || [];
+    // `filters` always holds the ACTIVE site's filter object (loaded/saved
+    // per-site), so every read is a plain `filters.<key>` — no per-key site
+    // branching. The only per-site bits below are genuine UI differences.
     // CurseForge lists only 4 mod loaders; Modrinth has the full set.
     const loaderList = isCF
       ? (MRMR.api.CF_LOADERS || ['Forge', 'Fabric', 'NeoForge', 'Quilt'])
@@ -129,7 +129,7 @@ MRMR.widget = (() => {
     }
 
     // ── Save / setters ────────────────────────────────────────
-    function persist() { MRMR.storage.setFilters(filters).catch(() => {}); }
+    function persist() { MRMR.storage.setFilters(site, filters).catch(() => {}); }
 
     function updateFilters(patch) {
       filters = { ...filters, ...patch };
@@ -148,7 +148,7 @@ MRMR.widget = (() => {
       let n = 0;
       if (filters.loaders.length) n++;
       if (filters.versionFrom || filters.versionTo) n++;
-      if (selectedCats().length) n++;
+      if (filters.categories.length) n++;
       if (!isCF && filters.side !== 'Any') n++;
       if ((parseInt(filters.minDownloads || '0', 10) || 0) > 0) n++;
       return n === 0 ? 'no filters' : n + (n === 1 ? ' filter' : ' filters');
@@ -231,7 +231,7 @@ MRMR.widget = (() => {
 
       // Categories — from API ([{ value, label }], per-site taxonomy)
       const catPills = categories.map(c =>
-        renderPill(c.label, selectedCats().includes(c.value), () => toggle(catKey, c.value))
+        renderPill(c.label, filters.categories.includes(c.value), () => toggle('categories', c.value))
       );
 
       // Match any/all sub-segment
@@ -318,7 +318,7 @@ MRMR.widget = (() => {
       const vTo = filters.versionTo || 'any';
       if (filters.versionFrom || filters.versionTo) parts.push(vFrom + '–' + vTo);
       if (!isCF && filters.side !== 'Any') parts.push(filters.side + ' side');
-      if (selectedCats().length) parts.push(selectedCats().length + ' cat.');
+      if (filters.categories.length) parts.push(filters.categories.length + ' cat.');
 
       return h('button', {
         class: 'mr-summary-bar',
@@ -476,7 +476,7 @@ MRMR.widget = (() => {
     // ── Init flow ─────────────────────────────────────────────
     (async () => {
       try {
-        filters = await MRMR.storage.getFilters();
+        filters = await MRMR.storage.getFilters(site);
       } catch { /* empty — use defaults */ }
       render(); // first paint with what we have
       try {

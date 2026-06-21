@@ -217,8 +217,8 @@ MRMR.api = (() => {
       // Drop it when it spans every release (== "any version").
       if (range.length && range.length < (cfReleases || []).length) p.set('version', range.join(','));
     }
-    if (filters.cfCategories && filters.cfCategories.length) {
-      p.set('categories', filters.cfCategories.join(','));
+    if (filters.categories && filters.categories.length) {
+      p.set('categories', filters.categories.join(','));
     }
     return CF_SEARCH + '?' + p.toString();
   }

@@ -4,16 +4,20 @@ MRMR.storage = (() => {
   const CACHE_PREFIX = 'cache:';
   const FILTERS_KEY = 'filters';
 
+  // Filters are kept independently per site (loaders/version/categories/min all
+  // differ between Modrinth and CurseForge), so nothing one site sets can bleed
+  // into the other.
   const DEFAULT_FILTERS = Object.freeze({
     loaders: ['Fabric', 'Forge', 'NeoForge', 'Quilt'],
     versionFrom: '',
     versionTo: '',
-    categories: [],     // Modrinth category values (slugs)
-    cfCategories: [],   // CurseForge category ids (separate taxonomy)
+    categories: [],     // per-site category values (Modrinth slugs / CF slugs)
     match: 'any',
-    side: 'Any',
+    side: 'Any',        // Modrinth only — Side is hidden on CurseForge
     minDownloads: ''
   });
+
+  function normSite(site) { return site === 'curseforge' ? 'curseforge' : 'modrinth'; }
 
   function hasChromeStorage() {
     return typeof chrome !== 'undefined' && chrome.storage;
@@ -35,17 +39,36 @@ MRMR.storage = (() => {
     await chrome.storage.local.set({ [fullKey]: { ts: Date.now(), v } });
   }
 
-  async function getFilters() {
-    if (!hasChromeStorage()) return { ...DEFAULT_FILTERS };
-    const obj = await chrome.storage.sync.get(FILTERS_KEY);
-    const saved = obj[FILTERS_KEY];
-    if (!saved || typeof saved !== 'object') return { ...DEFAULT_FILTERS };
-    return { ...DEFAULT_FILTERS, ...saved };
+  // Stored shape: { modrinth: {...}, curseforge: {...} }. One-time migration from
+  // the old flat (shared) shape seeds both sites — Modrinth keeps `categories`,
+  // CurseForge takes the old `cfCategories`; everything else is copied as the
+  // starting point for each site.
+  function asPerSite(saved) {
+    if (!saved || typeof saved !== 'object') return {};
+    if (saved.modrinth || saved.curseforge) return saved;     // already per-site
+    if (!('loaders' in saved)) return {};                     // unknown → defaults
+    const { cfCategories, categories, ...shared } = saved;
+    return {
+      modrinth: { ...shared, categories: categories || [] },
+      curseforge: { ...shared, categories: cfCategories || [] }
+    };
   }
 
-  async function setFilters(f) {
+  async function getFilters(site) {
+    site = normSite(site);
+    if (!hasChromeStorage()) return { ...DEFAULT_FILTERS };
+    const obj = await chrome.storage.sync.get(FILTERS_KEY);
+    const map = asPerSite(obj[FILTERS_KEY]);
+    return { ...DEFAULT_FILTERS, ...(map[site] || {}) };
+  }
+
+  async function setFilters(site, f) {
+    site = normSite(site);
     if (!hasChromeStorage()) return;
-    await chrome.storage.sync.set({ [FILTERS_KEY]: f });
+    const obj = await chrome.storage.sync.get(FILTERS_KEY);
+    const map = asPerSite(obj[FILTERS_KEY]);
+    map[site] = f;
+    await chrome.storage.sync.set({ [FILTERS_KEY]: map });
   }
 
   return { getCached, setCached, getFilters, setFilters, DEFAULT_FILTERS };
