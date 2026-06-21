@@ -132,6 +132,27 @@
     openModal();
   });
 
+  // ── Popup transport (CurseForge only) ──────────────────────
+  // The popup runs on chrome-extension:// and can't reach CurseForge's
+  // internal API same-origin (Cloudflare). It messages the active CF tab;
+  // we answer here with a same-origin fetch in the user's real session.
+  if (SITE === 'curseforge' && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
+    chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+      if (!msg || typeof msg.type !== 'string') return;
+      const reply = (p) => p
+        .then(result => sendResponse({ result }))
+        .catch(err => sendResponse({ error: (err && err.message) || 'CurseForge error' }));
+      if (msg.type === 'MRMR_CF_SEARCH') {
+        reply(MRMR.api.searchRandomMod(msg.filters, 'curseforge'));
+        return true; // keep the channel open for the async response
+      }
+      if (msg.type === 'MRMR_CF_CATEGORIES') {
+        reply(MRMR.api.getCategories('curseforge'));
+        return true;
+      }
+    });
+  }
+
   // First paint
   ensureButton();
 })();

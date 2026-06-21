@@ -100,9 +100,14 @@ MRMR.widget = (() => {
     let lastError = null;
     let releases = [];
     let categories = [];
+    let catsReady = false;
     let filtersOpenInResult = false;
     let isOpen = !isModal;
     let triggerEl = null;
+
+    // Categories are a different taxonomy per site, stored separately.
+    const catKey = isCF ? 'cfCategories' : 'categories';
+    const selectedCats = () => filters[catKey] || [];
 
     // Event: Escape to close (modal only)
     const onKeydown = (e) => {
@@ -139,7 +144,7 @@ MRMR.widget = (() => {
       let n = 0;
       if (filters.loaders.length) n++;
       if (filters.versionFrom || filters.versionTo) n++;
-      if (filters.categories.length) n++;
+      if (selectedCats().length) n++;
       if (!isCF && filters.side !== 'Any') n++;
       if ((parseInt(filters.minDownloads || '0', 10) || 0) > 0) n++;
       return n === 0 ? 'no filters' : n + (n === 1 ? ' filter' : ' filters');
@@ -149,7 +154,7 @@ MRMR.widget = (() => {
       setState('loading');
       lastError = null;
       try {
-        const r = await MRMR.api.searchRandomMod(filters);
+        const r = await MRMR.api.searchRandomMod(filters, site);
         if (r.empty) {
           setState('empty');
         } else {
@@ -220,9 +225,9 @@ MRMR.widget = (() => {
         )
       );
 
-      // Categories — from API
+      // Categories — from API ([{ value, label }], per-site taxonomy)
       const catPills = categories.map(c =>
-        renderPill(c, filters.categories.includes(c), () => toggle('categories', c))
+        renderPill(c.label, selectedCats().includes(c.value), () => toggle(catKey, c.value))
       );
 
       // Match any/all sub-segment
@@ -276,7 +281,7 @@ MRMR.widget = (() => {
           ),
           categories.length
             ? h('div', { class: 'mr-pills' }, catPills)
-            : h('div', { style: 'font-size:12px;color:var(--mr-text-faint);' }, 'Loading…')
+            : h('div', { style: 'font-size:12px;color:var(--mr-text-faint);' }, catsReady ? 'No categories' : 'Loading…')
         ),
         isCF ? null : h('div', null,
           h('div', { class: 'mr-section-label' }, 'Side'),
@@ -309,7 +314,7 @@ MRMR.widget = (() => {
       const vTo = filters.versionTo || 'any';
       if (filters.versionFrom || filters.versionTo) parts.push(vFrom + '–' + vTo);
       if (!isCF && filters.side !== 'Any') parts.push(filters.side + ' side');
-      if (filters.categories.length) parts.push(filters.categories.length + ' cat.');
+      if (selectedCats().length) parts.push(selectedCats().length + ' cat.');
 
       return h('button', {
         class: 'mr-summary-bar',
@@ -475,8 +480,9 @@ MRMR.widget = (() => {
         releases = gv.filter(v => v.version_type === 'release');
       } catch { /* leave empty — user can still pick loaders */ }
       try {
-        categories = await MRMR.api.getCategories();
+        categories = await MRMR.api.getCategories(site);
       } catch { /* leave empty */ }
+      catsReady = true;
       render(); // re-paint with populated tag lists
     })();
 

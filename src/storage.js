@@ -8,7 +8,8 @@ MRMR.storage = (() => {
     loaders: ['Fabric', 'Forge', 'NeoForge', 'Quilt'],
     versionFrom: '',
     versionTo: '',
-    categories: [],
+    categories: [],     // Modrinth category values (slugs)
+    cfCategories: [],   // CurseForge category ids (separate taxonomy)
     match: 'any',
     side: 'Any',
     minDownloads: ''
