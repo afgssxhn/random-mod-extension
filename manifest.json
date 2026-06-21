@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Modrinth Random Mod",
-  "version": "0.1.0",
-  "description": "Roll a random Minecraft mod from Modrinth with filters.",
+  "version": "0.2.0-alpha",
+  "description": "Roll a random Minecraft mod from Modrinth or CurseForge with filters.",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -20,11 +20,17 @@
   "permissions": ["storage"],
   "host_permissions": [
     "https://modrinth.com/*",
-    "https://api.modrinth.com/*"
+    "https://api.modrinth.com/*",
+    "*://*.curseforge.com/*",
+    "*://curseforge.com/*"
   ],
   "content_scripts": [
     {
-      "matches": ["https://modrinth.com/*"],
+      "matches": [
+        "https://modrinth.com/*",
+        "*://*.curseforge.com/*",
+        "*://curseforge.com/*"
+      ],
       "run_at": "document_idle",
       "js": [
         "src/site.js",
