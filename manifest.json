@@ -22,15 +22,15 @@
   "host_permissions": [
     "https://modrinth.com/*",
     "https://api.modrinth.com/*",
-    "*://*.curseforge.com/*",
-    "*://curseforge.com/*"
+    "https://*.curseforge.com/*",
+    "https://curseforge.com/*"
   ],
   "content_scripts": [
     {
       "matches": [
         "https://modrinth.com/*",
-        "*://*.curseforge.com/*",
-        "*://curseforge.com/*"
+        "https://*.curseforge.com/*",
+        "https://curseforge.com/*"
       ],
       "run_at": "document_idle",
       "js": [
