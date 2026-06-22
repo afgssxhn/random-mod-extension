@@ -143,7 +143,8 @@
   // internal API same-origin (Cloudflare). It messages the active CF tab;
   // we answer here with a same-origin fetch in the user's real session.
   if (SITE === 'curseforge' && typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
-    chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+      if (!sender || sender.id !== chrome.runtime.id) return;
       if (!msg || typeof msg.type !== 'string') return;
       const reply = (p) => p
         .then(result => sendResponse({ result }))
