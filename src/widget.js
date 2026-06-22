@@ -336,9 +336,15 @@ MRMR.widget = (() => {
     }
 
     function renderModCard(mod, biased) {
-      const iconEl = mod.icon_url
-        ? h('img', { class: 'mr-mod-icon', src: mod.icon_url, alt: '' })
-        : h('div', { class: 'mr-mod-icon-fallback' }, (mod.title || '?').charAt(0).toUpperCase());
+      const letterFallback = () =>
+        h('div', { class: 'mr-mod-icon-fallback' }, (mod.title || '?').charAt(0).toUpperCase());
+      const httpsIcon = typeof mod.icon_url === 'string' && /^https:\/\//i.test(mod.icon_url);
+      const iconEl = httpsIcon
+        ? h('img', {
+            class: 'mr-mod-icon', src: mod.icon_url, alt: '',
+            onError: (e) => { try { e.target.replaceWith(letterFallback()); } catch {} }
+          })
+        : letterFallback();
 
       const biasedPill = biased
         ? h('span', {

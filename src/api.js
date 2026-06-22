@@ -3,7 +3,11 @@ MRMR.api = (() => {
   const BASE = 'https://api.modrinth.com/v2';
   const OFFSET_CAP = 10000;
   const MIN_DL_MAX_TRIES = 5;
+  const BASE_MAX_TRIES = 3;
   const VERSION_FILTER_MAX_TRIES = 12;
+  // Abort a request that never settles so a hung connection can't leave the
+  // menu stuck in `loading` — the abort surfaces as a normal fetch rejection.
+  const FETCH_TIMEOUT_MS = 12000;
   // Modrinth's search returns total_hits:0 once the facets filter carries too
   // many terms (empirically: 49 terms still works, 55 → 0 hits). Stay under it.
   // Counts ALL terms (project_type + loaders + versions + categories + side),
@@ -29,8 +33,20 @@ MRMR.api = (() => {
   const CF_DEBUG = true;
   function cfLog(...a) { if (CF_DEBUG) { try { console.debug('[MRMR/cf]', ...a); } catch {} } }
 
+  // fetch with a hard timeout: a stalled connection aborts instead of hanging
+  // forever. Each call gets its own controller, so retries time out cleanly too.
+  async function fetchWithTimeout(url, opts) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+    try {
+      return await fetch(url, Object.assign({}, opts, { signal: ctrl.signal }));
+    } finally {
+      clearTimeout(t);
+    }
+  }
+
   async function fetchJSON(url, attempt = 0) {
-    const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    const res = await fetchWithTimeout(url, { headers: { 'Accept': 'application/json' } });
     if (res.status === 429 && attempt < 3) {
       await new Promise(r => setTimeout(r, 2000));
       return fetchJSON(url, attempt + 1);
@@ -156,7 +172,7 @@ MRMR.api = (() => {
     const minDL = Number(filters.minDownloads) || 0;
     const maxTries = wantedVersions
       ? VERSION_FILTER_MAX_TRIES
-      : (minDL > 0 ? MIN_DL_MAX_TRIES : 1);
+      : (minDL > 0 ? MIN_DL_MAX_TRIES : BASE_MAX_TRIES);
 
     for (let i = 0; i < maxTries; i++) {
       const offset = MRMR.utils.randInt(capped);
@@ -182,7 +198,7 @@ MRMR.api = (() => {
   // session (the /api/v1 JSON endpoints return 403).
   async function cfFetchDoc(url) {
     cfLog('GET', url.replace(CF_ORIGIN, ''));
-    const res = await fetch(url, { credentials: 'include', headers: { 'Accept': 'text/html' } });
+    const res = await fetchWithTimeout(url, { credentials: 'include', headers: { 'Accept': 'text/html' } });
     if (!res.ok) { cfLog('HTTP', res.status); throw new Error('CurseForge HTTP ' + res.status); }
     return new DOMParser().parseFromString(await res.text(), 'text/html');
   }
@@ -198,6 +214,13 @@ MRMR.api = (() => {
   function cfText(el, sel) {
     const e = el.querySelector(sel);
     return e ? e.textContent.replace(/\s+/g, ' ').trim() : '';
+  }
+
+  // Accept an <img> src only when it's an https: URL (defense-in-depth); a
+  // missing/other-scheme icon falls back to the letter avatar in the widget.
+  function cfHttpsSrc(img) {
+    const s = img && img.getAttribute('src');
+    return s && /^https:\/\//i.test(s) ? s : null;
   }
 
   // Build the CF search URL. Loaders / version range / categories are applied
@@ -241,7 +264,7 @@ MRMR.api = (() => {
         description: cfText(card, '.description'),
         version: cfText(card, '.detail-game-version'),
         loaders: flavor ? [flavor] : [],
-        icon_url: (img && img.getAttribute('src')) || null,
+        icon_url: cfHttpsSrc(img),
         url: slug ? (CF_ORIGIN + '/minecraft/mc-mods/' + slug) : (CF_ORIGIN + href)
       };
     }).filter(m => m.slug);
@@ -354,6 +377,13 @@ MRMR.api = (() => {
     let cfReleases = [];
     if (filters.versionFrom || filters.versionTo) {
       try { cfReleases = await getGameVersionsCF(); } catch { cfReleases = []; }
+      // The version filter is applied server-side from this list. If it's
+      // unavailable we'd silently roll across ALL versions — never do that;
+      // surface the error instead of ignoring the user's version choice.
+      if (!cfReleases.length) {
+        cfLog('version filter requested but CF version list unavailable — not rolling unfiltered');
+        throw new Error('CurseForge version list is unavailable');
+      }
     }
     const minDL = Number(filters.minDownloads) || 0;
 
