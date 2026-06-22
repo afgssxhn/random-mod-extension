@@ -109,7 +109,6 @@ MRMR.css = `
 .mr-panel > .mr-header,
 .mr-panel > .mr-body,
 .mr-panel > .mr-footer,
-.mr-panel > .mr-footer-loading,
 .mr-panel > .mr-footer-slot { position: relative; z-index: 1; }
 
 /* ── Background glow (cosmetic; toggleable) ── */
